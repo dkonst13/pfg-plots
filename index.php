@@ -11,7 +11,7 @@
 <?php
 
 foreach (scandir("plots") as $s){
- if ($s == "." or $s == ".."){
+ if ($s == "." or $s == ".." or $s != ".htaccess"){
   continue;
  }
  echo "<img src='plots/$s'><br>";
