@@ -81,6 +81,13 @@ def download(url, localpath):
   # atomic rename
   os.rename(tmpfile, localpath)
 
+def deleterun(dbh, run):
+  dbh.execute("delete from runs where run_num = {0}".format(run))
+  dbh.execute("delete from TT_FE_STATUS_BITS where run_num = {0}".format(run))
+  dbh.execute("VACUUM")
+  dbh.commit()
+  return dbh
+
 def filldb(dbh, run, table = "TT_FE_STATUS_BITS"):
   pathfmt = 'https://cmsweb.cern.ch/dqm/online/data/browse/ROOT/{0:05d}xxxx/{1:07d}xx/DQM_V0001_{3}_R{2:09d}.root'
   url = pathfmt.format(int(run/10000), int(run/100), run, 'Ecal')
@@ -117,13 +124,23 @@ def filldb(dbh, run, table = "TT_FE_STATUS_BITS"):
 
 dbh = sqlite3.connect(sys.argv[1])
 
+runs = []
+
 for i in open('runs.list','r').readlines():
   for k in i.split():
-    k = int(k)
-    try:
-      dbh = filldb(dbh, k)
-    except:
-      pass
+    runs.append(int(k))
+
+# delete unneded runs
+unruns = [c[0] for c in dbh.execute("select run_num from runs where run_num != {0}".format(" and run_num != ".join([str(i) for i in runs])))]
+for r in unruns:
+  print "deleting run", r
+  dbh = deleterun(dbh, r)
+
+for r in runs:
+  try:
+    dbh = filldb(dbh, r)
+  except:
+    pass
 dbh.commit()
 
 errorcodes = [c[0] for c in dbh.execute("select distinct status from TT_FE_STATUS_BITS") if c[0] != "ENABLED" and c[0] != "SUPPRESSED"]
