@@ -23,7 +23,6 @@ def plot2D(dbh, status = "ENABLED", ytable = "TT_FE_STATUS_BITS"):
   c = ROOT.TCanvas(cname, cname)
   c.SetGrid()
   hist = ROOT.TH2F (cname, cname, width, minwidth, maxwidth , height, 0, height)
-  hist.SetYTitle("TT")
   hist.SetMinimum(0)
   hist.SetMaximum(100)
   cur = dbh.cursor()
