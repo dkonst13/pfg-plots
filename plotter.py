@@ -30,7 +30,7 @@ def plot2D(dbh, status = "ENABLED", ytable = "TT_FE_STATUS_BITS"):
   xidx = 1
   for x in sorted([i[0] for i in dbh.execute("select distinct run_num from {0}".format(ytable))]):
     yidx = 1
-    for y in [j[0] for j in dbh.execute("select distinct TT_id from {0} where status = {1}".format(ytable, " or status = ".join(["'{0}'".format(q) for q in status])))]:
+    for y in sorted([j[0] for j in dbh.execute("select distinct TT_id from {0} where status = {1}".format(ytable, " or status = ".join(["'{0}'".format(q) for q in status])))]):
       try:
         tt = cur.execute("select tt, det, sm from TT_IDS where tt_id = {0}".format(y)).fetchone()
         ttname = "{1}{2:+03d}: TT{0}".format(tt[0], tt[1], tt[2])
@@ -119,8 +119,12 @@ def filldb(dbh, run, table = "TT_FE_STATUS_BITS"):
 dbh = sqlite3.connect(sys.argv[1])
 
 for i in open('runs.list','r').readlines():
-  i = int(i)
-  dbh = filldb(dbh, i)
+  for k in i.split():
+    k = int(k)
+    try:
+      dbh = filldb(dbh, k)
+    except:
+      pass
 dbh.commit()
 
 errorcodes = [c[0] for c in dbh.execute("select distinct status from TT_FE_STATUS_BITS") if c[0] != "ENABLED" and c[0] != "SUPPRESSED"]
