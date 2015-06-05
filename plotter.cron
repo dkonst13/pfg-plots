@@ -1,1 +1,1 @@
-*/15 * * * * cd /var/www; git pull; crontab -r; crontab plotter.cron; python plotter.py pfgplots.sqlite3
+0 * * * * cd /var/www; git pull; crontab -r; crontab plotter.cron; python plotter.py pfgplots.sqlite3
