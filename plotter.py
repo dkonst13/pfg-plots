@@ -12,12 +12,14 @@ ROOT.TH1.AddDirectory(False)
 ROOT.gErrorIgnoreLevel = ROOT.kWarning
 
 def plot2D(dbh, status = "ENABLED", ytable = "TT_FE_STATUS_BITS"):
-  height = dbh.execute("select count(distinct TT_id) from TT_FE_STATUS_BITS where status = '{0}'".format(status)).fetchone()[0]
+  if status.__class__ != list:
+    status = [status]
+  height = dbh.execute("select count(distinct TT_id) from TT_FE_STATUS_BITS where status = {0}".format(" or status = ".join(["'{0}'".format(q) for q in status]))).fetchone()[0]
   minwidth = dbh.execute("select min(run_num) from runs").fetchone()[0]
   maxwidth = dbh.execute("select max(run_num) from runs").fetchone()[0]
   width = maxwidth - minwidth
   #cname = dbh.execute("select name from plots where ytable = 'runs' and xtable = '{0}' and key = '{1}'".format(ytable, status)).fetchone()[0]
-  cname = status
+  cname = "+".join(status)
   c = ROOT.TCanvas(cname, cname)
   hist = ROOT.TH2F (cname, cname, width + 1, minwidth, maxwidth + 1, height, 1, height)
   hist.SetXTitle("Runs")
@@ -28,20 +30,23 @@ def plot2D(dbh, status = "ENABLED", ytable = "TT_FE_STATUS_BITS"):
   xidx = 1
   for x in sorted([i[0] for i in dbh.execute("select distinct run_num from {0}".format(ytable))]):
     yidx = 1
-    for y in [j[0] for j in dbh.execute("select distinct TT_id from {0} where status = '{1}'".format(ytable, status))]:
+    for y in [j[0] for j in dbh.execute("select distinct TT_id from {0} where status = {1}".format(ytable, " or status = ".join(["'{0}'".format(q) for q in status])))]:
       try:
         tt = cur.execute("select tt, det, sm from TT_IDS where tt_id = {0}".format(y)).fetchone()
         ttname = "{1}{2:+03d}: TT{0}".format(tt[0], tt[1], tt[2])
         sum = cur.execute("select sum(value) from {0} where run_num = {1} and tt_id = {2}".format(ytable, x, y)).fetchone()[0]
-        valarr = cur.execute("select value from {0} where run_num = {1} and tt_id = {2} and status = '{3}'".format(ytable, x, y, status)).fetchall()
-        if len(valarr) != 0:
-          val = valarr[0][0] * 100 / float(sum)
+        valarr = cur.execute("select sum(value) from {0} where run_num = {1} and tt_id = {2} and (status = {3})".format(ytable, x, y,  " or status = ".join(["'{0}'".format(q) for q in status]))).fetchone()
+        if valarr[0] is not None:
+          val = valarr[0] * 100 / float(sum)
         else:
           val = 0
-        print " run: {0:7d}, tt: {1:15s}, status: {2:15s}, value: {3}".format(x, ttname, status, val)
+        if val > 100:
+          print "!!! wrong logic !!!"
+          sys.exit(1)
+        print " run: {0:7d}, tt: {1:15s}, status: {2:40s}, value: {3}".format(x, ttname, "+".join(status), val)
         hist.SetBinContent(xidx, yidx, val)
       except Exception as e:
-        print "Do anything: ", str(e)
+        print "Skip: ", str(e)
       hist.GetYaxis().SetBinLabel(yidx, ttname)
       yidx += 1
     hist.GetXaxis().SetBinLabel(xidx, str(x))
@@ -51,15 +56,39 @@ def plot2D(dbh, status = "ENABLED", ytable = "TT_FE_STATUS_BITS"):
 #  c.Draw()
   hist.Draw("colz")
   c.Update()
-  c.SaveAs("plot_" + status + ".png")
+  c.SaveAs("plots/" + "_".join(status) + ".png")
 
-def filldb(dbh, run, rootfile, table = "TT_FE_STATUS_BITS"):
+def download(url, localpath):
+  """Downloads file with wget.
+    File is first downloaded under a name 'tmpfile' and then renamed: the
+    renaming operation is atomic, so the file is either fully downloaded or not
+    downloaded at all.
+  """
+  for d in ['downloads', 'plots']:
+    if not os.access(d, os.X_OK):
+      os.mkdir(d)
+  if os.access(localpath, os.R_OK):
+    return  # file already downloaded
+  tmpfile = os.path.join(os.path.dirname(localpath), 'tmpfile')
+  keypath  = os.path.join(os.getenv('HOME'), '.globus/userkey.pem')
+  certpath = os.path.join(os.getenv('HOME'), '.globus/usercert.pem')
+  # run wget
+  ret = subprocess.call(['wget', '-q', '--no-check-certificate',
+                         '--certificate=' + certpath,
+                         '--private-key=' + keypath, url, '-O', tmpfile],
+                        stdout=sys.stdout, stderr=sys.stderr)
+  if ret != 0:
+      sys.exit(1)
+  # atomic rename
+  os.rename(tmpfile, localpath)
+
+def filldb(dbh, run, table = "TT_FE_STATUS_BITS"):
+  pathfmt = 'https://cmsweb.cern.ch/dqm/online/data/browse/ROOT/{0:05d}xxxx/{1:07d}xx/DQM_V0001_{3}_R{2:09d}.root'
+  url = pathfmt.format(int(run/10000), int(run/100), run, 'Ecal')
+  path = os.path.join('downloads', os.path.basename(url))
+  download(url, path)
+  rootfile = 'downloads/' + os.path.basename(url)
   print "Processing file ", rootfile
-  if not os.path.exists(rootfile):
-    ret = subprocess.call(['dqm_dumper.py', run], stdout=sys.stdout, stderr=sys.stderr)
-    if ret != 0:
-        sys.exit(1)
-
   f = ROOT.TFile(rootfile)
   print "select * from runs where run_num = {0} and root_file = '{1}'".format(run, rootfile)
   if len(dbh.execute("select * from runs where run_num = {0} and root_file = '{1}'".format(run, rootfile)).fetchall()) != 0:
@@ -91,10 +120,15 @@ dbh = sqlite3.connect(sys.argv[1])
 
 for i in open('runs.list','r').readlines():
   i = int(i)
-  dbh = filldb(dbh, i, 'downloads/DQM_V0001_Ecal_R000{0}.root'.format(i))
+  dbh = filldb(dbh, i)
 dbh.commit()
-      
-plot2D(dbh, "LINKERROR")
-plot2D(dbh, "TIMEOUT")
-plot2D(dbh, "HEADERERROR")
-plot2D(dbh, "DISABLED")
+
+errorcodes = [c[0] for c in dbh.execute("select distinct status from TT_FE_STATUS_BITS") if c[0] != "ENABLED" and c[0] != "SUPPRESSED"]
+
+for ec in errorcodes:
+  plot2D(dbh, ec)
+
+# additional combo
+plot2D(dbh, ["LINKERROR", "TIMEOUT", "HEADERERROR"])
+plot2D(dbh, ["LINKERROR", "TIMEOUT"] )
+plot2D(dbh, ["LINKERROR", "HEADERERROR"])
