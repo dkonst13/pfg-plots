@@ -5,7 +5,7 @@
 <center>
 <h1>FE STATUS BITS</h1>
 <a href="downloads">ROOT files</a><br>
-<a href="Plots">Plots</a><br>
+<a href="plots">Plots</a><br>
 
 
 <?php
