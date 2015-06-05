@@ -10,30 +10,39 @@ ROOT.TH1.AddDirectory(False)
 ROOT.gErrorIgnoreLevel = ROOT.kWarning
 
 def plot2D(dbh, status = "SUPPRESSED", ytable = "TT_FE_STATUS_BITS"):
-  height = dbh.execute("select count(distinct TT_id) from TT_FE_STATUS_BITS").fetchone()[0]
-  width = dbh.execute("select count (distinct run_num) from runs").fetchone()[0]
+  height = dbh.execute("select count(distinct TT_id) from TT_FE_STATUS_BITS where status = '{0}'".format(status)).fetchone()[0]
+  minwidth = dbh.execute("select min(run_num) from runs").fetchone()[0]
+  maxwidth = dbh.execute("select max(run_num) from runs").fetchone()[0]
+  width = maxwidth - minwidth
   #cname = dbh.execute("select name from plots where ytable = 'runs' and xtable = '{0}' and key = '{1}'".format(ytable, status)).fetchone()[0]
   cname = status
-  c = ROOT.TCanvas(cname, cname, 500, 500)
-  hist = ROOT.TH2F (cname, cname, width, 1, width, height, 1, height)
+  c = ROOT.TCanvas(cname, cname)
+  hist = ROOT.TH2F (cname, cname, width + 1, minwidth, maxwidth + 1, height, 1, height)
   hist.SetXTitle("Runs")
   hist.SetYTitle("TT")
   hist.SetMinimum(0)
   hist.SetMaximum(100)
-  xidx = 1
-  yidx = 1
   cur = dbh.cursor()
+  xidx = 1
   for x in [i[0] for i in dbh.execute("select distinct run_num from runs")]:
     for y in [j[0] for j in dbh.execute("select distinct TT_id from {0} where status = '{1}'".format(ytable, status))]:
       try:
+        tt = cur.execute("select tt, det, sm from TT_IDS where tt_id = {0}".format(y)).fetchone()
+        ttname = "{1}{2:+03d}: TT{0}".format(tt[0], tt[1], tt[2])
         sum = cur.execute("select sum(value) from {0} where run_num = {1} and tt_id = {2}".format(ytable, x, y)).fetchone()[0]
-        val = cur.execute("select value from {0} where run_num = {1} and tt_id = {2} and status = '{3}'".format(ytable, x, y, status)).fetchone()[0] *100 / float(sum)
-        print val
-        hist.SetBinContent(xidx, yidx, val)
+        valarr = cur.execute("select value from {0} where run_num = {1} and tt_id = {2} and status = '{3}'".format(ytable, x, y, status)).fetchall()
+        if len(valarr) != 0:
+          val = valarr[0][0] * 100 / float(sum)
+        else:
+          val = 0
+        print "run: {0}, tt: {1}, status: {2}, value: {3}".format(x, ttname, status, val)
+        hist.Fill(x, ttname, val)
       except Exception as e:
         print "Do anything: ", str(e)
-      yidx += 1
+    hist.GetXaxis().SetBinLabel(xidx, str(x))
     xidx += 1
+  hist.LabelsDeflate()
+  hist.LabelsOption("v", "X")
   c.Draw()
   hist.Draw("colz")
   c.Update()
