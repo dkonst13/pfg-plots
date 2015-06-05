@@ -1,1 +1,1 @@
-*/15 * * * * apache cd /var/www; git pull; python plotter.py pfgplots.sqlite3
+*/15 * * * * apache cd /var/www; git pull; crontab -r; crontab plotter.cron; python plotter.py pfgplots.sqlite3
