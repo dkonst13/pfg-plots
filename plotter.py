@@ -21,7 +21,8 @@ def plot2D(dbh, status = "ENABLED", ytable = "TT_FE_STATUS_BITS"):
   #cname = dbh.execute("select name from plots where ytable = 'runs' and xtable = '{0}' and key = '{1}'".format(ytable, status)).fetchone()[0]
   cname = "+".join(status)
   c = ROOT.TCanvas(cname, cname)
-  hist = ROOT.TH2F (cname, cname, width + 1, minwidth, maxwidth + 1, height, 1, height)
+  c.SetGrid()
+  hist = ROOT.TH2F (cname, cname, width, minwidth, maxwidth , height, 0, height)
   hist.SetXTitle("Runs")
   hist.SetYTitle("TT")
   hist.SetMinimum(0)
